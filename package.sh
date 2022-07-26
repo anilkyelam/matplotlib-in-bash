@@ -1,0 +1,1 @@
+pyinstaller plot.py --onefile
