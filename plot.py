@@ -83,10 +83,10 @@ class LegendLoc(Enum):
 
 LINESTYLE_TUPLES = {
     'solid':               (0, ()),
-    'dashed':              (0, (5, 5)),
-    'dotted':              (0, (1, 5)),
-    'dashdot':             (0, (3, 5, 1, 5)),
-    'dashdotdot':          (0, (3, 5, 1, 5, 1, 5)),
+    'dashed':              (0, (3, 2)),
+    'dotted':              (0, (1, 1)),
+    'dashdot':             (0, (3, 2, 1, 2)),
+    'dashdotdot':          (0, (3, 2, 1, 2, 1, 2)),
     'loosedash':           (0, (5, 10)),
     'loosedot':            (0, (1, 10)),
     'loosedashdot':        (0, (3, 10, 1, 10)),
@@ -140,40 +140,61 @@ class OutputFormat(Enum):
 
 class Plot:
     """ Encapuslates some varying metadata for each plot """
-    ydatafile = None
-    ycolumn = None
-    yerror = None
-    xdatafile = None
-    xcolumn = None
-    xmultiplier = None 
-    ymultiplier = None
-    label = None
-    is_twin = False
-    def __init__(self, yfile, ycol, yerr, xfile, xcol):
+    ydatafile: str
+    ycolumn: str
+    yerror: str
+    xdatafile: str
+    xcolumn: str
+    xerror: str
+    annotcol: str
+    annotfile: str
+    label: str
+    is_twin: bool
+    def __init__(self, yfile, ycol, yerr, xfile, xcol, xerr):
         self.ydatafile = yfile
         self.ycolumn = ycol
         self.yerror = yerr
         self.xdatafile = xfile
         self.xcolumn = xcol
+        self.xerror = xerr
+        self.label = None
+        self.is_twin = False
+        self.annotcol = None
+        self.annotfile = None
     def read_xcolumn(self):
-        "read and return x-column data for this plot"
+        """read and return x-column data for this plot"""
         if not self.xcolumn: return None
         xdatafile = self.xdatafile if self.xdatafile else self.ydatafile
         assert os.path.exists(xdatafile), "x-column datafile not found"
         dframe = pd.read_csv(xdatafile, skipinitialspace=True)
         return dframe[self.xcolumn]
+    def read_xerror(self):
+        """read and return x-error data for this plot"""
+        if not self.xerror: return None
+        xdatafile = self.xdatafile if self.xdatafile else self.ydatafile
+        assert os.path.exists(xdatafile), "x-error datafile not found"
+        dframe = pd.read_csv(xdatafile, skipinitialspace=True)
+        return dframe[self.xerror]
     def read_ycolumn(self):
-        "read and return y-column data for this plot"
+        """read and return y-column data for this plot"""
         assert self.ycolumn is not None, "y-column must be present"
-        assert os.path.exists(self.ydatafile), "y-column datafile not found"
+        assert os.path.exists(self.ydatafile),  \
+            "y-column datafile {} not found".format(self.ydatafile)
         dframe = pd.read_csv(self.ydatafile, skipinitialspace=True)
         return dframe[self.ycolumn]
     def read_yerror(self):
-        "read and return y-error data for this plot"
+        """read and return y-error data for this plot"""
         if not self.yerror: return None
         assert os.path.exists(self.ydatafile), "y-error datafile not found"
         dframe = pd.read_csv(self.ydatafile, skipinitialspace=True)
         return dframe[self.yerror]
+    def read_annotcolumn(self):
+        """read and return annotation data for this plot"""
+        if not self.annotcol: return None
+        datafile= self.annotfile if self.annotfile else self.ydatafile
+        assert os.path.exists(datafile), "annotation datafile not found"
+        dframe = pd.read_csv(datafile, skipinitialspace=True)
+        return dframe[self.annotcol]
 
 def parser_definition():
     """ Parser Definition """
@@ -193,29 +214,55 @@ def parser_definition():
             ' file as corresponding Y-column. Defaults to the row index '
             ' if not provided.')
 
+    parser.add_argument('-xce', '--xcolumnxerr',
+        action='store',
+        nargs=2,
+        help='Like -xc but along with an error bar column for the X-column')
+
+    parser.add_argument('-dxc', '--dfilexcol',
+        nargs=2,
+        action='store',
+        help='Like -xc but also specify a CSV file for the X-column for all plots')
+
+    parser.add_argument('-dxce', '--dfilexcolxerr',
+        nargs=3,
+        action='store',
+        help='Like -dxc but along with an error bar column for the X-column')
+
     parser.add_argument('-yc', '--ycolumn',
         action='append',
         help='CSV column name for Y-coordinate. Multiple values are allowed, '
             'each representing a column from the CSV file [-d] that is plotted '
             'separately')
 
-    parser.add_argument('-dxc', '--dfilexcol',
+    parser.add_argument('-yce', '--ycolumnyerr',
         nargs=2,
-        action='store',
-        metavar=('XDATAFILE', 'XCOLUMN'),
-        help='Like -xcol but also specify a CSV file for the X-column for all plots')
+        action='append',
+        metavar=('YCOLUMN', 'YERROR'),
+        help='Like -yc but along with an error bar column for each Y-column')
 
     parser.add_argument('-dyc', '--dfileycol',
         nargs=2,
         action='append',
         metavar=('YDATAFILE', 'YCOLUMN'),
-        help='Like -ycol but also specify a separate CSV file per Y-column')
+        help='Like -yc but also specify a separate CSV file per Y-column')
 
     parser.add_argument('-dyce', '--dfileycolyerr',
         nargs=3,
         action='append',
         metavar=('YDATAFILE', 'YCOLUMN', 'YERROR'),
-        help='Like -dycol but along with an error bar column per each Y-column')
+        help='Like -dyc but along with an error bar column for each Y-column')
+
+    parser.add_argument('-ac', '--annotcolumn',
+        action='append',
+        help="CSV column name with labels for annotating Y-data. If provided, "
+            "this must be provided for all plots (-yc's) and in the same order."
+            "You can use an empty string to skip annotating a plot.")
+
+    parser.add_argument('-dac', '--datafileannotcol',
+        nargs=2,
+        action='append',
+        help="Like -ac but also specify the CSV file for the annotation column")
 
     # PLOT STYLE
     parser.add_argument('-z', '--ptype',
@@ -275,6 +322,11 @@ def parser_definition():
         help='Treat the provided data as PDF when generating a cdf chart',
         default=False)
 
+    parser.add_argument('-cb', '--cdfbins',
+        action='store',
+        type=int,
+        help='Number of bins to use for cdf chart')
+
     # PLOT ADD-ONS (give it a richer look)
     parser.add_argument('-xm', '--xmul',
         action='store',
@@ -322,8 +374,8 @@ def parser_definition():
 
     parser.add_argument('-hlf', '--hlinesfile',
         action='store',
-        help='File with (label,x-intercept) pairs for specifying horizontal '
-            'lines with custom labels, one pair per line')
+        help='File with (label,x-intercept[,color]) tuples for specifying '
+            'horizontal lines with custom labels and colors, one pair per line')
 
     parser.add_argument('-vl', '--vlines',
         action='store',
@@ -334,6 +386,17 @@ def parser_definition():
     parser.add_argument('-vlf', '--vlinesfile',
         action='store',
         help='Same as -hlf but for vertical lines')
+
+    parser.add_argument('-lf', '--linefit',
+        action='store_true',
+        help='Add a line to fit each Y-column (only for scatter plots)',
+        default=False)
+
+    parser.add_argument('-lfo', '--linefitorder',
+        action='store',
+        type=int,
+        help='Polynomial order of the line in --linefit (only for scatter plots)',
+        default=1)
 
     # PLOT COSMETICS (it's all about look and feel)
     parser.add_argument('-ls', '--linestyle',
@@ -356,6 +419,17 @@ def parser_definition():
         type=int,
         choices=[0,1])
 
+    parser.add_argument('--xstrrot',
+        action='store',
+        type=int,
+        help='Rotate x-label text by this angle (applies to a bar plot)',
+        default=0)
+
+    parser.add_argument('-bl', '--labelbars',
+        action='store_true',
+        help='Label the bars with their non-zero numeric values',
+        default=False)
+
     parser.add_argument('-cmi', '--colormarkerincr',
         action='append',
         help='If specified, this gives control over whether color/marker styles'
@@ -374,6 +448,13 @@ def parser_definition():
         type=int,
         choices=range(1,10),
         metavar='[1-10]')
+
+    parser.add_argument('-cmr', '--colormarkerrst',
+        action='store',
+        type=int,
+        help='Iteratively reset color/marker style counter once number of plots'
+            ' plotted reach this value. Used to cycle through the same set of '
+            ' color/marker styles again')
 
     parser.add_argument('-nm', '--nomarker',
         action='store_true',
@@ -460,6 +541,11 @@ def parser_definition():
         const=1.0)
 
     # LOGISTICS (boring stuff)
+    parser.add_argument('-pp', '--printper',
+        action='store_true',
+        help='print percentile stats for each plot (ycol)',
+        default=False)
+
     parser.add_argument('-o', '--output',
         action='store',
         help='path to the generated output file (see -of for file format)',
@@ -487,40 +573,88 @@ def parser_get_plots(parser, args):
     formats = 0
     formats += 1 if (args.dfileycolyerr is not None) else 0
     formats += 1 if (args.dfileycol is not None) else 0
-    formats += 1 if (args.datafile is not None or args.ycolumn is not None) else 0
+    formats += 1 if (args.datafile is not None and args.ycolumn is not None) else 0
+    formats += 1 if (args.datafile is not None and args.ycolumnyerr is not None) else 0
     if formats != 1:
-        parser.error('One (and only one) of the (-d/-yc) or (-dyc) or (-dyce) '
-            'formats should be used to provide input data!')
+        parser.error('At least (and only) one of the (-d/-yc) or (-d/-yce) or '
+            '(-dyc) or (-dyce) formats should be used to provide input data!')
 
     if (args.datafile or args.ycolumn) and \
         (args.datafile and len(args.datafile) > 1) and \
         (args.ycolumn and len(args.ycolumn) > 1):
-        parser.error('If using (-d/-yc) format, only one of the -d or -ycol params'
-            ' allow multiple values. Use -dyc(e) format otherwise.')
+        parser.error('If using (-d/-yc) format, only one of the -d or -yc '
+            'params allow multiple values. Use -dyc format otherwise.')
+
+    if (args.datafile or args.ycolumnyerr) and \
+        (args.datafile and len(args.datafile) > 1) and \
+        (args.ycolumnyerr and len(args.ycolumnyerr) > 1):
+        parser.error('If using (-d/-yce) format, only one of the -d or -yce '
+            'params allow multiple values. Use -dyc(e) format otherwise.')
 
     # Constraints on X-column data
     xdatafile = None
     xcolumn = None
+    xerror = None
+    formats = 0
+    formats += 1 if (args.xcolumn is not None) else 0
+    formats += 1 if (args.xcolumnxerr is not None) else 0
+    formats += 1 if (args.dfilexcolxerr is not None) else 0
+    formats += 1 if (args.dfilexcol is not None) else 0
+    if formats > 1:
+        parser.error('Only one of the -xc, -xce, -dxc or '
+            '-dxce formats should be used to provide an X-column data!')
     if args.xcolumn is not None:
         xcolumn = args.xcolumn
-    if args.dfilexcol is not None:
-        if xcolumn:
-            parser.error("Use either the -dxcol or -xcol to specify X-data, not both!")
+    elif args.xcolumnxerr is not None:
+        xcolumn = args.xcolumnxerr[0]
+        xerror = args.xcolumnxerr[1]
+    elif args.dfilexcol is not None:
         xdatafile = args.dfilexcol[0]
         xcolumn = args.dfilexcol[1]
+    elif args.dfilexcolxerr is not None:
+        xdatafile = args.dfilexcolxerr[0]
+        xcolumn = args.dfilexcolxerr[1]
+        xerror = args.dfilexcolxerr[2]
 
     # Infer Y-column data
     plots = []
     if args.dfileycolyerr is not None:
         for (dfile, ycol, yerr) in args.dfileycolyerr:
-            plots.append(Plot(dfile, ycol, yerr, xdatafile, xcolumn))
+            plots.append(Plot(dfile, ycol, yerr, xdatafile, xcolumn, xerror))
     elif args.dfileycol is not None:
         for (dfile, ycol) in args.dfileycol:
-            plots.append(Plot(dfile, ycol, None, xdatafile, xcolumn))
+            plots.append(Plot(dfile, ycol, None, xdatafile, xcolumn, xerror))
     else:
         for dfile in args.datafile:
-            for ycol in args.ycolumn:
-                plots.append(Plot(dfile, ycol, None, xdatafile, xcolumn))
+            if args.ycolumn is not None:
+                for ycol in args.ycolumn:
+                    plots.append(Plot(dfile, ycol, None, xdatafile, xcolumn, xerror))
+            elif args.ycolumnyerr is not None:
+                for (ycol, yerr) in args.ycolumnyerr:
+                    plots.append(Plot(dfile, ycol, yerr, xdatafile, xcolumn, xerror))
+
+    if len(plots) == 0:
+        parser.error("Couldn't infer any plots from CLI arguments")
+
+    # Infer annotation data
+    if args.annotcolumn is not None and args.datafileannotcol is not None:
+        parser.error("Only one of -ac or -dac should be used to provide the "
+            "annotation columns for data points")
+    if args.annotcolumn is not None:
+        if len(args.annotcolumn) != 1 and len(args.annotcolumn) != len(plots):
+            parser.error("If -ac/-dac is provided, it must be provided once or "
+                "one for each plot and in the same order; empty cols allowed")
+        for i, plot in enumerate(plots):
+            plot.annotcol = args.annotcolumn[i] \
+                    if len(args.annotcolumn) == len(plots)  \
+                        else args.annotcolumn[0]
+    elif args.datafileannotcol is not None:
+        if len(args.datafileannotcol) != len(plots):
+            parser.error("If -ac/-dac is provided, it must be provided "
+                "for each plot and in the same order; empty cols allowed")
+        for i, plot in enumerate(plots):
+            plot.annotfile = args.datafileannotcol[i][0]
+            plot.annotcol = args.datafileannotcol[i][1]
 
     # Infer twin plots
     if args.twin:
@@ -541,14 +675,15 @@ def parser_get_plots(parser, args):
         if not args.plabel:
             parser.error("If --labelincr is specified, plot labels must be "
                 "specified with -l/--plabel")
-        if len(args.plabel) < sum(args.labelincr):
-            parser.error("If plot labels and --labelincr are provided, sum of "
-                "label increments should not cross the number of plot labels")
+        if len(args.labelincr) != len(args.plabel) or sum(args.labelincr) != len(plots):
+            parser.error("If --labelincr are provided, they should match the "
+                "number of labels and the sum of label increments should match "
+                "the number of plots")
         plotidx = 0
         labelidx = 0
         for incr in args.labelincr:
-            for i in incr:
-                plots[plotidx].label = args.plabel[labelidx]
+            for i in range(incr):
+                plots[plotidx].label = "" if i != 0 else args.plabel[labelidx]
                 plotidx += 1
             labelidx += 1
 
@@ -560,6 +695,11 @@ def parser_get_plots(parser, args):
     if args.stacknextbar is not None and len(args.stacknextbar) != len(plots):
         parser.error("If --stacknextbar is provided, it must be provided for "
             "each plot and in the same order")
+
+    if args.colormarkerrst is not None:
+        if args.colormarkerrst <= 0 or args.colormarkerrst > len(plots):
+            parser.error("Invalid -cmr, must be >= 1 and <= number of plots")
+
     return plots
 
 def main():
@@ -569,14 +709,18 @@ def main():
     plots = parser_get_plots(parser, args)
 
     # Create Matlplotlib figure
-    matplotlib.rc('font', **{'family': 'sans-serif', 'size': args.fontsize})
+    matplotlib.rc('font', **{'family': 'Verdana', 'size': args.fontsize})
     matplotlib.rc('figure', autolayout=True)
     matplotlib.rcParams['pdf.fonttype'] = 42  # recommended for latex-embeds
     fig, axmain = plt.subplots(1, 1, figsize=tuple(args.size))
     if args.ptitle:
-        fig.suptitle(args.ptitle, x=0.3, y=0.9,
+        # top center outside
+        # fig.suptitle(args.ptitle, x=0.3, y=0.92,
+        #     horizontalalignment='left', verticalalignment='bottom')
+        # top center inside
+        fig.suptitle(args.ptitle, x=0.3, y=0.8,
             horizontalalignment='left', verticalalignment='top')
-        fig.tight_layout()
+        # fig.tight_layout()
 
     # Add twin axes if necessary
     axtwin = None
@@ -593,6 +737,7 @@ def main():
     base_dataset = None
     temp_xcol = None
     total_width = 0
+    percentiles = []
 
     # Add plots one by one
     for plot_num, plot in enumerate(plots):
@@ -603,13 +748,16 @@ def main():
         xcol = plot.read_xcolumn()
         ycol = plot.read_ycolumn()
         if xcol is None:    xcol = ycol.index
+        xerr = plot.read_xerror()
         yerr = plot.read_yerror()
         ymul = args.tymul if plot.is_twin else args.ymul
+        annotcol = plot.read_annotcolumn()
 
         # Plot types
         if args.ptype == PlotType.LINE:
             xcol = [x * args.xmul for x in xcol]
             ycol = [y * ymul for y in ycol]
+            xerr = [x * args.xmul for x in xerr] if xerr is not None else None
             yerr = [y * ymul for y in yerr] if yerr is not None else None
 
             if args.ynorm:
@@ -620,22 +768,37 @@ def main():
                     ycol = [i/j for i,j in zip(ycol, base_dataset)]
 
             if args.xstr:   xcol = [str(x) for x in xcol]
-            axes.errorbar(xcol, ycol, yerr=yerr, label=plot.label,
+            axes.errorbar(xcol, ycol, xerr=xerr, yerr=yerr, label=plot.label,
                 color=COLORS[cidx],
                 marker=(None if args.nomarker else MARKERS[midx]),
                 markerfacecolor=(None if args.nomarker else COLORS[cidx]),
-                ls=args.linestyle[plot_num].as_tuple() if args.linestyle else None)
+                ls=args.linestyle[plot_num].as_tuple() \
+                    if args.linestyle is not None else None)
             # if args.xstr:   ax.set_xticks(xc)
             # if args.xstr:   ax.set_xticklabels(xc, rotation='45')
 
         elif args.ptype == PlotType.SCATTER:
             xcol = [x * args.xmul for x in xcol]
             ycol = [y * ymul for y in ycol]
+            xerr = [x * args.xmul for x in xerr] if xerr is not None else None
+            yerr = [y * ymul for y in yerr] if yerr is not None else None
             marker_size = 2*(72./fig.dpi)**2 if len(ycol) > 1000 else None
-            axes.scatter(xcol, ycol, label=plot.label, color=COLORS[cidx],
-                marker=(None if args.nomarker else MARKERS[midx]), s=marker_size)
+            axes.errorbar(xcol, ycol, xerr=xerr, yerr=yerr, label=plot.label,
+                color=COLORS[cidx],
+                marker=(None if args.nomarker else MARKERS[midx]),
+                markerfacecolor=(None if args.nomarker else COLORS[cidx]),
+                ls='none', s=marker_size)
+            # axes.scatter(xcol, ycol, label=plot.label, color=COLORS[cidx],
+            #     marker=(None if args.nomarker else MARKERS[midx]), s=marker_size)
             if args.xstr:   axes.set_xticks(xcol)
             if args.xstr:   axes.set_xticklabels(xcol, rotation='45')
+
+            if args.linefit:
+                trend = np.polyfit(xcol, ycol, args.linefitorder)
+                xfit = sorted(xcol)
+                yfit = np.polyval(trend, xfit)
+                # print("Line fit: y = {}x + {}".format(m, c))
+                axes.plot(xfit, yfit, color=COLORS[cidx], ls='dotted', lw=0.5)
 
         elif args.ptype == PlotType.BAR:
             xstart = np.arange(len(xcol)) * (len(plots) + 1) * args.barwidth
@@ -644,11 +807,20 @@ def main():
             ycol = [y * ymul for y in ycol]
             yerr = [y * ymul for y in yerr] if yerr is not None else None
 
-            axes.bar(temp_xcol, ycol, yerr=yerr, width=args.barwidth,
+            p = axes.bar(temp_xcol, ycol, yerr=yerr, width=args.barwidth,
                 bottom=base_dataset, label=plot.label, color=COLORS[cidx],
                 hatch=str(args.barhatchstyle[plot_num]) \
                     if args.barhatchstyle is not None else None)
-            # ax.set_xticklabels(xcol, rotation='15' if args.xstr else 0)
+            if args.labelbars:
+                axes.bar_label(p, label_type='edge', fmt="%.1f")
+
+            # annotate missing data
+            # if args.annotate_missing:
+            for i, y in enumerate(ycol):
+                if np.isnan(y):
+                    axes.annotate("NaN", xy=(temp_xcol[i], 0),
+                        color=COLORS[cidx], ha='center', va='bottom',
+                        fontsize='small', rotation='vertical')
 
             if args.stacknextbar and args.stacknextbar[plot_num] == 1:
                 if base_dataset is None:    base_dataset = ycol
@@ -661,17 +833,22 @@ def main():
             if plot_num == len(plots) - 1:
                 xticks = xstart + total_width / 2
                 axes.set_xticks(xticks)
-                axes.set_xticklabels(xcol)
+                axes.set_xticklabels(xcol, rotation=args.xstrrot)
 
         elif args.ptype == PlotType.CDF:
+            perycol = ycol  #save ycol for percentiles
             if args.pdfdata:
                 # xcol remains the same
                 ycol = np.cumsum(ycol)/sum(ycol)
+            elif args.cdfbins:
+                pdf, bins = np.histogram(ycol, args.cdfbins)
+                xcol = bins[:-1]
+                ycol = np.cumsum(pdf) / sum(pdf)
             else:
                 xcol = np.sort(ycol)
+                if annotcol is not None:
+                    annotcol = list(annotcol[np.argsort(ycol)])
                 ycol = 1. * np.arange(len(ycol)) / (len(ycol) - 1)
-            print(xcol)
-            print(ycol)
 
             # See if head and/or tail needs trimming
             # NOTE: We don't remove values, instead we limit the axes. This is
@@ -693,14 +870,31 @@ def main():
                     args.xmax = tail if args.xmax is None else max(tail, args.xmax)
 
             xcol = [x * args.xmul for x in xcol]
+            perycol = [y * args.xmul for y in perycol]
             ycol = [y * ymul for y in ycol]
             axes.step(xcol, ycol, label=plot.label, color=COLORS[cidx],
                 where="post", marker=(None if args.nomarker else MARKERS[midx]),
-                ls=args.linestyle[plot_num] if args.linestyle is not None else None)
+                ls=args.linestyle[plot_num].as_tuple() if args.linestyle is not None else None)
                 # markerfacecolor=(None if args.nomarker else COLORS[cidx]))
 
         else:
             raise Exception("chart type not supported")
+
+        # print percentiles
+        if args.printper:
+            sorted_ycol = np.sort(perycol) if perycol else np.sort(ycol)
+            percentiles.append([plot.label, np.percentile(sorted_ycol, 10),
+                np.percentile(sorted_ycol, 25), np.percentile(sorted_ycol, 50),
+                np.percentile(sorted_ycol, 90), np.percentile(sorted_ycol, 99),
+                np.percentile(sorted_ycol, 99.9), np.percentile(sorted_ycol, 99.99),
+                np.percentile(sorted_ycol, 99.999), np.max(sorted_ycol)])
+
+        # annotate if necessary
+        if annotcol is not None:
+            for i, (x, y) in enumerate(zip(xcol, ycol)):
+                if not annotcol[i].isspace():
+                    axes.annotate(annotcol[i], xy=(x, y),
+                        ha='right', va='top', fontsize='xx-small')
 
         # Decide color and marker for the next plot
         if args.colormarkerincr:
@@ -710,13 +904,17 @@ def main():
             cidx = (cidx + 1) % len(COLORS)
             midx = (midx + 1) % len(MARKERS)
 
+        # Reset color/marker if necessary
+        if args.colormarkerrst is not None:
+            if (plot_num + 1) % args.colormarkerrst == 0:
+                cidx = midx = 0
 
     # Set x-axis params
     xlabel = args.xlabel if args.xlabel else plots[0].xcolumn
     axmain.set_xlabel(xlabel)
     if args.xmin is not None:   axmain.set_xlim(xmin=args.xmin)
     if args.xmax is not None:   axmain.set_xlim(xmax=args.xmax)
-    if args.xlog:               axmain.set_xscale('log', basex=10)
+    if args.xlog:               axmain.set_xscale('log', base=10)
 
     # Set y-axis params
     ylabel = args.ylabel if args.ylabel else plots[0].ycolumn
@@ -727,7 +925,7 @@ def main():
 
     # Set twin y-axis params
     if axtwin:
-        tylabel = args.ylabel if args.ylabel else plots[args.axtwin].ycolumn
+        tylabel = args.tylabel if args.tylabel else plots[args.axtwin].ycolumn
         axtwin.set_ylabel(tylabel)
         if args.tymin is not None:   axtwin.set_ylim(ymin=args.tymin)
         if args.tymax is not None:   axtwin.set_ylim(ymax=args.tymax)
@@ -748,16 +946,19 @@ def main():
     # Add any horizontal lines (only supported for main axes now)
     hlines = []
     if args.hlines:
-        hlines += [(h, str(h)) for h in args.hlines]
+        hlines += [(h, str(h), 'black') for h in args.hlines]
     if args.hlinesfile and os.path.exists(args.hlinesfile):
         with open(args.hlinesfile) as f:
             for line in f.readlines():
-                label = line.split(",")[0]
-                intercept = int(line.split(",")[1])
-                hlines.append((intercept, label))
-    for (intercept, label) in hlines:
-        plt.axhline(y=intercept, ls='dashed')
-        plt.text(0.5, intercept, label, color='black', fontsize='small',
+                cols = line.split(",")
+                assert len(cols) >= 2, "hlinesfile must have at least 2 columns"
+                label = cols[0]
+                intercept = float(cols[1])
+                color = cols[2].strip() if len(cols) >= 3 else 'black'
+                hlines.append((intercept, label, color))
+    for (intercept, label, color) in hlines:
+        plt.axhline(y=intercept, ls='dashed', color=color)
+        plt.text(0.5, intercept, label, color=color, fontsize='small',
             transform=axmain.get_yaxis_transform(), rotation='horizontal')
 
     # Add any vertical lines
@@ -774,6 +975,11 @@ def main():
         plt.axvline(x=intercept, ls='dashed')
         plt.text(intercept, 0.3, label, color='black', fontsize='small',
             transform=axmain.get_xaxis_transform(), rotation='vertical')
+
+    # print percentile statistics
+    if args.printper:
+        print(pd.DataFrame(percentiles, columns=['Name', 'P10', 'P25', 'P50',
+            'P90', 'P99', 'P99.9', 'P99.99', 'P99.999', 'MAX']).round(1))
 
     # Save chart
     plt.savefig(args.output, format=str(args.outformat))
